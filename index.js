@@ -70,17 +70,17 @@ app.post("/webhook", async (req, res) => {
       payload.description ||
       "";
 
-    // UTM parameters from metadata
-    const metadata = payload.metadata || {};
-    let utmParams = [
-      metadata.utm_source && `utm_source=${metadata.utm_source}`,
-      metadata.utm_medium && `utm_medium=${metadata.utm_medium}`,
-      metadata.utm_campaign && `utm_campaign=${metadata.utm_campaign}`,
-      metadata.utm_term && `utm_term=${metadata.utm_term}`,
-      metadata.utm_content && `utm_content=${metadata.utm_content}`,
-    ]
-      .filter(Boolean)
-      .join(" | ");
+    // UTM parameters — Cal.com passes these as hidden fields in payload.responses
+      const responses = payload.responses || {};
+      const utmParams = [
+        responses.utm_source?.value && `utm_source=${responses.utm_source.value}`,
+        responses.utm_medium?.value && `utm_medium=${responses.utm_medium.value}`,
+        responses.utm_campaign?.value && `utm_campaign=${responses.utm_campaign.value}`,
+        responses.utm_term?.value && `utm_term=${responses.utm_term.value}`,
+        responses.utm_content?.value && `utm_content=${responses.utm_content.value}`,
+      ]
+    .filter(Boolean)
+    .join(" | ");
 
     // Fallback: parse UTMs from bookerUrl
     if (!utmParams && payload.bookerUrl) {
