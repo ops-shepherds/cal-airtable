@@ -8,7 +8,6 @@ app.use(bodyParser.json());
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || "Bookings";
-const CAL_WEBHOOK_SECRET = process.env.CAL_WEBHOOK_SECRET; // optional but recommended
 
 // Health check
 app.get("/", (req, res) => res.json({ status: "Cal → Airtable webhook running" }));
@@ -17,7 +16,6 @@ app.post("/webhook", async (req, res) => {
   try {
     const event = req.body;
 
-    // Only process BOOKING_CREATED events (you can extend to handle reschedules/cancellations later)
     if (event.triggerEvent !== "BOOKING_CREATED") {
       console.log(`Ignoring event type: ${event.triggerEvent}`);
       return res.status(200).json({ ignored: true });
@@ -25,20 +23,30 @@ app.post("/webhook", async (req, res) => {
 
     const payload = event.payload;
 
-    // --- Extract fields from Cal.com payload ---
+    // Log full payload so we can debug field locations
+    console.log("Raw Cal.com payload:", JSON.stringify(payload, null, 2));
 
-    // Name: attendee name
+    // Attendee
     const attendee = payload.attendees?.[0] || {};
     const name = attendee.name || "";
     const customerEmail = attendee.email || "";
-    const customerPhone = payload.responses?.phone?.value || "";
 
-    // Event type
-    const eventType = payload.eventType?.title || payload.title || "";
+    // Phone — try multiple locations Cal.com may put it
+    const customerPhone =
+      payload.responses?.phone?.value ||
+      payload.responses?.attendeePhoneNumber?.value ||
+      attendee.phoneNumber ||
+      "";
 
-    // Booking date & time (payload.startTime is ISO 8601)
+    // Event type — use internal event type title, not customer-facing calendar title
+    const eventType =
+      payload.eventType?.title ||
+      payload.type ||
+      "";
+
+    // Booking date & time
     const startTime = payload.startTime ? new Date(payload.startTime) : null;
-    const bookingDate = startTime ? startTime.toISOString().split("T")[0] : ""; // YYYY-MM-DD
+    const bookingDate = startTime ? startTime.toISOString().split("T")[0] : "";
     const bookingTime = startTime
       ? startTime.toLocaleTimeString("en-US", {
           hour: "2-digit",
@@ -54,16 +62,17 @@ app.post("/webhook", async (req, res) => {
       payload.responses?.location?.value ||
       "";
 
-    // Notes / additional notes from the booking form
+    // Notes
     const bookingNotes =
       payload.responses?.notes?.value ||
       payload.responses?.message?.value ||
+      payload.additionalNotes ||
       payload.description ||
       "";
 
-    // UTM parameters — Cal.com stores these in metadata
+    // UTM parameters from metadata
     const metadata = payload.metadata || {};
-    const utmParams = [
+    let utmParams = [
       metadata.utm_source && `utm_source=${metadata.utm_source}`,
       metadata.utm_medium && `utm_medium=${metadata.utm_medium}`,
       metadata.utm_campaign && `utm_campaign=${metadata.utm_campaign}`,
@@ -73,7 +82,19 @@ app.post("/webhook", async (req, res) => {
       .filter(Boolean)
       .join(" | ");
 
-    // --- Build Airtable record ---
+    // Fallback: parse UTMs from bookerUrl
+    if (!utmParams && payload.bookerUrl) {
+      try {
+        const url = new URL(payload.bookerUrl);
+        const parts = [];
+        for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
+          if (url.searchParams.get(key)) parts.push(`${key}=${url.searchParams.get(key)}`);
+        }
+        utmParams = parts.join(" | ");
+      } catch (_) {}
+    }
+
+    // Build Airtable record
     const airtableFields = {
       "Name": name,
       "Fitting Type": eventType,
@@ -87,7 +108,6 @@ app.post("/webhook", async (req, res) => {
 
     console.log("Writing to Airtable:", airtableFields);
 
-    // --- Push to Airtable ---
     const airtableRes = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}`,
       {
