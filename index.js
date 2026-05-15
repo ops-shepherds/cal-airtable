@@ -67,17 +67,25 @@ app.post("/webhook", async (req, res) => {
       payload.description ||
       "";
 
-    // UTM parameters — passed as metadata from the Cal embed
+    // UTM parameters — check metadata, responses, and userFieldsResponses
     const metadata = payload.metadata || {};
-    const utmParams = [
-      metadata.utm_source && `utm_source=${metadata.utm_source}`,
-      metadata.utm_medium && `utm_medium=${metadata.utm_medium}`,
-      metadata.utm_campaign && `utm_campaign=${metadata.utm_campaign}`,
-      metadata.utm_term && `utm_term=${metadata.utm_term}`,
-      metadata.utm_content && `utm_content=${metadata.utm_content}`,
-    ]
-      .filter(Boolean)
-      .join(" | ");
+    const responses = payload.responses || {};
+    const userFields = payload.userFieldsResponses || {};
+
+    function getUtm(key) {
+      return (
+        metadata[key] ||
+        userFields[key]?.value ||
+        responses[key]?.value ||
+        ""
+      );
+    }
+
+    const utmSource   = getUtm("utm_source");
+    const utmMedium   = getUtm("utm_medium");
+    const utmCampaign = getUtm("utm_campaign");
+    const utmTerm     = getUtm("utm_term");
+    const utmContent  = getUtm("utm_content");
 
     // Build Airtable record
     const airtableFields = {
@@ -88,7 +96,11 @@ app.post("/webhook", async (req, res) => {
       "Email": customerEmail,
       "Phone": customerPhone,
       "Notes": bookingNotes,
-      "UTM Values": utmParams,
+      "UTM Source": utmSource,
+      "UTM Medium": utmMedium,
+      "UTM Campaign": utmCampaign,
+      "UTM Term": utmTerm,
+      "UTM Content": utmContent,
     };
 
     console.log("Writing to Airtable:", airtableFields);
