@@ -23,25 +23,22 @@ app.post("/webhook", async (req, res) => {
 
     const payload = event.payload;
 
-    // Log full payload so we can debug field locations
-    console.log("Raw Cal.com payload:", JSON.stringify(payload, null, 2));
-
     // Attendee
     const attendee = payload.attendees?.[0] || {};
     const name = attendee.name || "";
     const customerEmail = attendee.email || "";
 
-    // Phone — try multiple locations Cal.com may put it
+    // Phone
     const customerPhone =
-      payload.responses?.phone?.value ||
       payload.responses?.attendeePhoneNumber?.value ||
+      payload.responses?.phone?.value ||
       attendee.phoneNumber ||
       "";
 
-    // Event type — use internal event type title, not customer-facing calendar title
+    // Event type slug (internal name)
     const eventType =
-      payload.eventType?.title ||
       payload.type ||
+      payload.eventType?.title ||
       "";
 
     // Booking date & time
@@ -70,29 +67,17 @@ app.post("/webhook", async (req, res) => {
       payload.description ||
       "";
 
-    // UTM parameters — Cal.com passes these as hidden fields in payload.responses
-      const responses = payload.responses || {};
-      const utmParams = [
-        responses.utm_source?.value && `utm_source=${responses.utm_source.value}`,
-        responses.utm_medium?.value && `utm_medium=${responses.utm_medium.value}`,
-        responses.utm_campaign?.value && `utm_campaign=${responses.utm_campaign.value}`,
-        responses.utm_term?.value && `utm_term=${responses.utm_term.value}`,
-        responses.utm_content?.value && `utm_content=${responses.utm_content.value}`,
-      ]
-    .filter(Boolean)
-    .join(" | ");
-
-    // Fallback: parse UTMs from bookerUrl
-    if (!utmParams && payload.bookerUrl) {
-      try {
-        const url = new URL(payload.bookerUrl);
-        const parts = [];
-        for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
-          if (url.searchParams.get(key)) parts.push(`${key}=${url.searchParams.get(key)}`);
-        }
-        utmParams = parts.join(" | ");
-      } catch (_) {}
-    }
+    // UTM parameters — passed as metadata from the Cal embed
+    const metadata = payload.metadata || {};
+    const utmParams = [
+      metadata.utm_source && `utm_source=${metadata.utm_source}`,
+      metadata.utm_medium && `utm_medium=${metadata.utm_medium}`,
+      metadata.utm_campaign && `utm_campaign=${metadata.utm_campaign}`,
+      metadata.utm_term && `utm_term=${metadata.utm_term}`,
+      metadata.utm_content && `utm_content=${metadata.utm_content}`,
+    ]
+      .filter(Boolean)
+      .join(" | ");
 
     // Build Airtable record
     const airtableFields = {
