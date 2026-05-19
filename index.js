@@ -171,7 +171,7 @@ app.post("/webhook", async (req, res) => {
 
     // Link to customer if found/created
     if (customerId) {
-      airtableFields["Customer"] = [{ "id": customerId }];
+      airtableFields["Customer"] = [customerId];
     }
 
     console.log("Writing to Airtable:", airtableFields);
