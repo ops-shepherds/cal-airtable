@@ -62,9 +62,12 @@ app.post("/webhook", async (req, res) => {
     console.log("Start time raw:", payload.startTime);
 
     const startTime = payload.startTime ? new Date(payload.startTime) : null;
-    const bookingDate = startTime ? startTime.toISOString().split("T")[0] : "";
-    const bookingTime = startTime
-      ? startTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: payload.organizer?.timeZone || attendee.timeZone || "America/Chicago" })
+    const timezone = payload.organizer?.timeZone || attendee.timeZone || "America/Chicago";
+    const bookingDateUTC = payload.startTime || "";
+    const bookingDateDisplay = startTime
+      ? startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: timezone })
+        + " · "
+        + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
       : "";
 
     const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
@@ -108,7 +111,8 @@ app.post("/webhook", async (req, res) => {
     const fittingFields = {
       "Name": fullName,
       "Fitting Type": eventType,
-      "Date": bookingDate ? `${bookingDate} ${bookingTime}`.trim() : "",
+      "Date": bookingDateDisplay,
+      "Date (UTC)": bookingDateUTC,
       "Location": location,
       "Email": customerEmail,
       "Phone": customerPhone,
