@@ -7,7 +7,46 @@ app.use(bodyParser.json());
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || "Bookings";
+const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || "Fittings";
+const AIRTABLE_CUSTOMERS_TABLE = process.env.AIRTABLE_CUSTOMERS_TABLE || "Customers";
+
+const AIRTABLE_HEADERS = {
+  Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+  "Content-Type": "application/json",
+};
+
+// --- Airtable helpers ---
+
+async function findCustomerByEmail(email) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}?filterByFormula=${encodeURIComponent(`{Email}="${email}"`)}`;
+  const res = await fetch(url, { headers: AIRTABLE_HEADERS });
+  const data = await res.json();
+  return data.records?.[0] || null;
+}
+
+async function createCustomer(fields) {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}`,
+    {
+      method: "POST",
+      headers: AIRTABLE_HEADERS,
+      body: JSON.stringify({ fields }),
+    }
+  );
+  return res.json();
+}
+
+async function updateCustomer(recordId, fields) {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}/${recordId}`,
+    {
+      method: "PATCH",
+      headers: AIRTABLE_HEADERS,
+      body: JSON.stringify({ fields }),
+    }
+  );
+  return res.json();
+}
 
 // Health check
 app.get("/", (req, res) => res.json({ status: "Cal → Airtable webhook running" }));
@@ -25,7 +64,10 @@ app.post("/webhook", async (req, res) => {
 
     // Attendee
     const attendee = payload.attendees?.[0] || {};
-    const name = attendee.name || "";
+    const fullName = attendee.name || "";
+    const nameParts = fullName.trim().split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
     const customerEmail = attendee.email || "";
 
     // Phone
@@ -73,12 +115,7 @@ app.post("/webhook", async (req, res) => {
     const userFields = payload.userFieldsResponses || {};
 
     function getUtm(key) {
-      return (
-        metadata[key] ||
-        userFields[key]?.value ||
-        responses[key]?.value ||
-        ""
-      );
+      return metadata[key] || userFields[key]?.value || responses[key]?.value || "";
     }
 
     const utmSource   = getUtm("utm_source");
@@ -87,9 +124,36 @@ app.post("/webhook", async (req, res) => {
     const utmTerm     = getUtm("utm_term");
     const utmContent  = getUtm("utm_content");
 
-    // Build Airtable record
+    // --- Find or create customer ---
+    let customerId = null;
+
+    if (customerEmail) {
+      let customer = await findCustomerByEmail(customerEmail);
+
+      if (customer) {
+        console.log(`Found existing customer: ${customer.id}`);
+        customerId = customer.id;
+        // Update phone if missing
+        if (!customer.fields["Phone"] && customerPhone) {
+          await updateCustomer(customer.id, { "Phone": customerPhone });
+        }
+      } else {
+        console.log(`Customer not found, creating new record for ${customerEmail}`);
+        const newCustomer = await createCustomer({
+          "Name": fullName,
+          "First Name": firstName,
+          "Last Name": lastName,
+          "Email": customerEmail,
+          "Phone": customerPhone,
+        });
+        customerId = newCustomer.id;
+        console.log(`Created new customer: ${customerId}`);
+      }
+    }
+
+    // --- Build Airtable fitting record ---
     const airtableFields = {
-      "Name": name,
+      "Name": fullName,
       "Fitting Type": eventType,
       "Date": bookingDate ? `${bookingDate} ${bookingTime}`.trim() : "",
       "Location": location,
@@ -103,16 +167,18 @@ app.post("/webhook", async (req, res) => {
       "UTM Content": utmContent,
     };
 
+    // Link to customer if found/created
+    if (customerId) {
+      airtableFields["Customer"] = [customerId];
+    }
+
     console.log("Writing to Airtable:", airtableFields);
 
     const airtableRes = await fetch(
       `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+        headers: AIRTABLE_HEADERS,
         body: JSON.stringify({ fields: airtableFields }),
       }
     );
