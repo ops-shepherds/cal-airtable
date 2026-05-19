@@ -24,9 +24,10 @@ async function airtableRequest(method, table, body, recordId) {
 }
 
 async function findCustomerByEmail(email) {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}?filterByFormula=${encodeURIComponent(`{Email}="${email}"`)}`;
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}?filterByFormula=${encodeURIComponent(`LOWER({Email})=LOWER("${email}")`)}`;
   const res = await fetch(url, { headers: AIRTABLE_HEADERS });
   const data = await res.json();
+  console.log("Customer search for", email, "returned:", JSON.stringify(data.records?.map(r => r.fields?.Email)));
   return data.records?.[0] || null;
 }
 
