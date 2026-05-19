@@ -61,7 +61,7 @@ app.post("/webhook", async (req, res) => {
     const startTime = payload.startTime ? new Date(payload.startTime) : null;
     const bookingDate = startTime ? startTime.toISOString().split("T")[0] : "";
     const bookingTime = startTime
-      ? startTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: attendee.timeZone || "UTC" })
+      ? startTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: payload.organizer?.timeZone || attendee.timeZone || "America/Chicago" })
       : "";
 
     const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
