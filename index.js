@@ -15,7 +15,13 @@ const AIRTABLE_HEADERS = {
   "Content-Type": "application/json",
 };
 
-// --- Airtable helpers ---
+async function airtableRequest(method, table, body, recordId) {
+  const url = recordId
+    ? `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}/${recordId}`
+    : `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
+  const res = await fetch(url, { method, headers: AIRTABLE_HEADERS, body: body ? JSON.stringify(body) : undefined });
+  return res.json();
+}
 
 async function findCustomerByEmail(email) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}?filterByFormula=${encodeURIComponent(`{Email}="${email}"`)}`;
@@ -24,31 +30,6 @@ async function findCustomerByEmail(email) {
   return data.records?.[0] || null;
 }
 
-async function createCustomer(fields) {
-  const res = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}`,
-    {
-      method: "POST",
-      headers: AIRTABLE_HEADERS,
-      body: JSON.stringify({ fields }),
-    }
-  );
-  return res.json();
-}
-
-async function updateCustomer(recordId, fields) {
-  const res = await fetch(
-    `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}/${recordId}`,
-    {
-      method: "PATCH",
-      headers: AIRTABLE_HEADERS,
-      body: JSON.stringify({ fields }),
-    }
-  );
-  return res.json();
-}
-
-// Health check
 app.get("/", (req, res) => res.json({ status: "Cal → Airtable webhook running" }));
 
 app.post("/webhook", async (req, res) => {
@@ -61,8 +42,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     const payload = event.payload;
-
-    // Attendee
     const attendee = payload.attendees?.[0] || {};
     const fullName = attendee.name || "";
     const nameParts = fullName.trim().split(" ");
@@ -70,91 +49,59 @@ app.post("/webhook", async (req, res) => {
     const lastName = nameParts.slice(1).join(" ") || "";
     const customerEmail = attendee.email || "";
 
-    // Phone
     const customerPhone =
       payload.responses?.attendeePhoneNumber?.value ||
       payload.responses?.phone?.value ||
       attendee.phoneNumber ||
       "";
 
-    // Event type slug (internal name)
-    const eventType =
-      payload.type ||
-      payload.eventType?.title ||
-      "";
+    const eventType = payload.type || payload.eventType?.title || "";
 
-    // Booking date & time
     const startTime = payload.startTime ? new Date(payload.startTime) : null;
     const bookingDate = startTime ? startTime.toISOString().split("T")[0] : "";
     const bookingTime = startTime
-      ? startTime.toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: attendee.timeZone || "UTC",
-        })
+      ? startTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: attendee.timeZone || "UTC" })
       : "";
 
-    // Location
-    const location =
-      payload.location ||
-      payload.videoCallData?.url ||
-      payload.responses?.location?.value ||
-      "";
+    const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+    const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
 
-    // Notes
-    const bookingNotes =
-      payload.responses?.notes?.value ||
-      payload.responses?.message?.value ||
-      payload.additionalNotes ||
-      payload.description ||
-      "";
-
-    // UTM parameters — check metadata, responses, and userFieldsResponses
     const metadata = payload.metadata || {};
     const responses = payload.responses || {};
     const userFields = payload.userFieldsResponses || {};
+    const getUtm = (key) => metadata[key] || userFields[key]?.value || responses[key]?.value || "";
 
-    function getUtm(key) {
-      return metadata[key] || userFields[key]?.value || responses[key]?.value || "";
-    }
-
-    const utmSource   = getUtm("utm_source");
-    const utmMedium   = getUtm("utm_medium");
-    const utmCampaign = getUtm("utm_campaign");
-    const utmTerm     = getUtm("utm_term");
-    const utmContent  = getUtm("utm_content");
-
-    // --- Find or create customer ---
+    // --- Step 1: Find or create customer ---
     let customerId = null;
-
     if (customerEmail) {
       let customer = await findCustomerByEmail(customerEmail);
-
       if (customer) {
-        console.log(`Found existing customer: ${customer.id}`);
         customerId = customer.id;
-        // Update phone if missing
+        console.log(`Found existing customer: ${customerId}`);
         if (!customer.fields["Phone"] && customerPhone) {
-          await updateCustomer(customer.id, { "Phone": customerPhone });
+          await airtableRequest("PATCH", AIRTABLE_CUSTOMERS_TABLE, { fields: { "Phone": customerPhone } }, customerId);
         }
       } else {
-        console.log(`Customer not found, creating new record for ${customerEmail}`);
-        const newCustomer = await createCustomer({
-          "First Name": firstName,
-          "Last Name": lastName,
-          "Email": customerEmail,
-          "Phone": customerPhone,
+        console.log(`Creating new customer for ${customerEmail}`);
+        const newCustomer = await airtableRequest("POST", AIRTABLE_CUSTOMERS_TABLE, {
+          fields: {
+            "First Name": firstName,
+            "Last Name": lastName,
+            "Email": customerEmail,
+            "Phone": customerPhone,
+          }
         });
         if (newCustomer.error) {
           console.error("Failed to create customer:", JSON.stringify(newCustomer));
+        } else {
+          customerId = newCustomer.id;
+          console.log(`Created new customer: ${customerId}`);
         }
-        customerId = newCustomer.id;
-        console.log(`Created new customer: ${customerId}`);
       }
     }
 
-    // --- Build Airtable fitting record ---
-    const airtableFields = {
+    // --- Step 2: Create fitting record WITHOUT customer link ---
+    const fittingFields = {
       "Name": fullName,
       "Fitting Type": eventType,
       "Date": bookingDate ? `${bookingDate} ${bookingTime}`.trim() : "",
@@ -162,38 +109,38 @@ app.post("/webhook", async (req, res) => {
       "Email": customerEmail,
       "Phone": customerPhone,
       "Notes": bookingNotes,
-      "UTM Source": utmSource,
-      "UTM Medium": utmMedium,
-      "UTM Campaign": utmCampaign,
-      "UTM Term": utmTerm,
-      "UTM Content": utmContent,
+      "UTM Source": getUtm("utm_source"),
+      "UTM Medium": getUtm("utm_medium"),
+      "UTM Campaign": getUtm("utm_campaign"),
+      "UTM Term": getUtm("utm_term"),
+      "UTM Content": getUtm("utm_content"),
     };
 
-    // Link to customer if found/created
-    if (customerId) {
-      airtableFields["Customer"] = [customerId];
+    console.log("Creating fitting record...");
+    const fitting = await airtableRequest("POST", AIRTABLE_TABLE_NAME, { fields: fittingFields });
+
+    if (fitting.error) {
+      console.error("Fitting create error:", JSON.stringify(fitting));
+      return res.status(500).json({ error: "Fitting create failed", detail: fitting });
     }
 
-    console.log("Writing to Airtable:", airtableFields);
+    console.log(`Fitting created: ${fitting.id}`);
 
-    const airtableRes = await fetch(
-      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}`,
-      {
-        method: "POST",
-        headers: AIRTABLE_HEADERS,
-        body: JSON.stringify({ fields: airtableFields }),
+    // --- Step 3: Link customer to fitting in a separate PATCH call ---
+    if (customerId && fitting.id) {
+      console.log(`Linking customer ${customerId} to fitting ${fitting.id}`);
+      const linkResult = await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
+        fields: { "Customer": [customerId] }
+      }, fitting.id);
+
+      if (linkResult.error) {
+        console.error("Link error:", JSON.stringify(linkResult));
+      } else {
+        console.log("Customer linked successfully");
       }
-    );
-
-    const airtableData = await airtableRes.json();
-
-    if (!airtableRes.ok) {
-      console.error("Airtable error:", airtableData);
-      return res.status(500).json({ error: "Airtable write failed", detail: airtableData });
     }
 
-    console.log("Record created:", airtableData.id);
-    res.status(200).json({ success: true, airtableId: airtableData.id });
+    res.status(200).json({ success: true, airtableId: fitting.id });
   } catch (err) {
     console.error("Webhook error:", err);
     res.status(500).json({ error: err.message });
