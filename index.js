@@ -140,12 +140,14 @@ app.post("/webhook", async (req, res) => {
       } else {
         console.log(`Customer not found, creating new record for ${customerEmail}`);
         const newCustomer = await createCustomer({
-          "Name": fullName,
           "First Name": firstName,
           "Last Name": lastName,
           "Email": customerEmail,
           "Phone": customerPhone,
         });
+        if (newCustomer.error) {
+          console.error("Failed to create customer:", JSON.stringify(newCustomer));
+        }
         customerId = newCustomer.id;
         console.log(`Created new customer: ${customerId}`);
       }
