@@ -27,7 +27,7 @@ async function findCustomerByEmail(email) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_CUSTOMERS_TABLE)}?filterByFormula=${encodeURIComponent(`LOWER({Email})=LOWER("${email}")`)}`;
   const res = await fetch(url, { headers: AIRTABLE_HEADERS });
   const data = await res.json();
-  console.log("Customer search for", email, "returned:", JSON.stringify(data.records?.map(r => r.fields?.Email)));
+  console.log("Customer search raw response:", JSON.stringify(data));
   return data.records?.[0] || null;
 }
 
