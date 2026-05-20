@@ -31,6 +31,15 @@ async function findCustomerByEmail(email) {
   return data.records?.[0] || null;
 }
 
+async function findFittingByICalUID(iCalUID) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}?filterByFormula=${encodeURIComponent(`{iCal UID}="${iCalUID}"`)}`;
+  const res = await fetch(url, { headers: AIRTABLE_HEADERS });
+  const data = await res.json();
+  // Return the original booking (iCalSequence 0) if multiple found
+  const records = data.records || [];
+  return records.find(r => r.fields["iCal Sequence"] === 0) || records[0] || null;
+}
+
 async function findFittingByUid(uid) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}?filterByFormula=${encodeURIComponent(`{Cal UID}="${uid}"`)}`;
   const res = await fetch(url, { headers: AIRTABLE_HEADERS });
@@ -123,6 +132,8 @@ app.post("/webhook", async (req, res) => {
           "Notes": bookingNotes,
           "Status": "Scheduled",
           "Cal UID": payload.uid || "",
+      "iCal UID": iCalUID,
+      "iCal Sequence": iCalSequence,
           "UTM Source": getUtm("utm_source"),
           "UTM Medium": getUtm("utm_medium"),
           "UTM Campaign": getUtm("utm_campaign"),
@@ -152,11 +163,11 @@ app.post("/webhook", async (req, res) => {
     }
 
     // If rescheduleUid is present, this is actually a reschedule
-    console.log("Full payload keys:", Object.keys(payload));
-    console.log("Full payload:", JSON.stringify(payload));
-    const rescheduleFromUid = payload.rescheduledFromUid || payload.rescheduleUid;
-    const isReschedule = !!rescheduleFromUid;
-    console.log("Is reschedule:", isReschedule, "rescheduledFromUid:", rescheduleFromUid);
+    const rescheduleReason = payload.responses?.rescheduleReason?.value || "";
+    const iCalSequence = payload.iCalSequence || 0;
+    const iCalUID = payload.iCalUID || "";
+    const isReschedule = !!rescheduleReason || iCalSequence > 0;
+    console.log("Is reschedule:", isReschedule, "iCalUID:", iCalUID, "iCalSequence:", iCalSequence, "rescheduleReason:", rescheduleReason);
 
     const attendee = payload.attendees?.[0] || {};
     const fullName = attendee.name || "";
@@ -223,7 +234,7 @@ app.post("/webhook", async (req, res) => {
 
     // --- Step 2: If reschedule, mark old fitting as Rescheduled ---
     if (isReschedule) {
-      const oldFitting = await findFittingByUid(rescheduleFromUid);
+      const oldFitting = await findFittingByICalUID(iCalUID);
       if (oldFitting) {
         await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
           fields: { "Status": "Rescheduled" }
