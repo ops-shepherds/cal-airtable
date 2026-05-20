@@ -152,6 +152,8 @@ app.post("/webhook", async (req, res) => {
     }
 
     // If rescheduleUid is present, this is actually a reschedule
+    console.log("Full payload keys:", Object.keys(payload));
+    console.log("Full payload:", JSON.stringify(payload));
     const rescheduleFromUid = payload.rescheduledFromUid || payload.rescheduleUid;
     const isReschedule = !!rescheduleFromUid;
     console.log("Is reschedule:", isReschedule, "rescheduledFromUid:", rescheduleFromUid);
