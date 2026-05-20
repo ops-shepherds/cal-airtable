@@ -31,18 +31,72 @@ async function findCustomerByEmail(email) {
   return data.records?.[0] || null;
 }
 
+async function findFittingByUid(uid) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE_NAME)}?filterByFormula=${encodeURIComponent(`{Cal UID}="${uid}"`)}`;
+  const res = await fetch(url, { headers: AIRTABLE_HEADERS });
+  const data = await res.json();
+  return data.records?.[0] || null;
+}
+
 app.get("/", (req, res) => res.json({ status: "Cal → Airtable webhook running" }));
 
 app.post("/webhook", async (req, res) => {
   try {
     const event = req.body;
+    const triggerEvent = event.triggerEvent;
+    const payload = event.payload;
 
-    if (event.triggerEvent !== "BOOKING_CREATED") {
-      console.log(`Ignoring event type: ${event.triggerEvent}`);
+    // --- BOOKING CANCELLED ---
+    if (triggerEvent === "BOOKING_CANCELLED") {
+      console.log("Handling cancellation for UID:", payload.uid);
+      const fitting = await findFittingByUid(payload.uid);
+      if (fitting) {
+        await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
+          fields: { "Status": "Cancelled" }
+        }, fitting.id);
+        console.log(`Marked fitting ${fitting.id} as Cancelled`);
+      } else {
+        console.log("No fitting found for UID:", payload.uid);
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    // --- BOOKING RESCHEDULED ---
+    if (triggerEvent === "BOOKING_RESCHEDULED") {
+      console.log("Handling reschedule for UID:", payload.uid);
+      const fitting = await findFittingByUid(payload.uid);
+
+      const attendee = payload.attendees?.[0] || {};
+      const timezone = payload.organizer?.timeZone || attendee.timeZone || "America/Chicago";
+      const startTime = payload.startTime ? new Date(payload.startTime) : null;
+      const bookingDateUTC = payload.startTime || "";
+      const bookingDateDisplay = startTime
+        ? startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: timezone })
+          + " · "
+          + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
+        : "";
+
+      if (fitting) {
+        await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
+          fields: {
+            "Date": bookingDateDisplay,
+            "Date (UTC)": bookingDateUTC,
+            "Status": "Scheduled",
+          }
+        }, fitting.id);
+        console.log(`Updated fitting ${fitting.id} with new date`);
+      } else {
+        console.log("No fitting found for UID:", payload.uid);
+      }
+      return res.status(200).json({ success: true });
+    }
+
+    // --- BOOKING CREATED ---
+    if (triggerEvent !== "BOOKING_CREATED") {
+      console.log(`Ignoring event type: ${triggerEvent}`);
       return res.status(200).json({ ignored: true });
     }
 
-    const payload = event.payload;
     const attendee = payload.attendees?.[0] || {};
     const fullName = attendee.name || "";
     const nameParts = fullName.trim().split(" ");
@@ -58,7 +112,6 @@ app.post("/webhook", async (req, res) => {
 
     const eventType = payload.type || payload.eventType?.title || "";
     console.log("Organizer timezone:", payload.organizer?.timeZone);
-    console.log("Attendee timezone:", attendee.timeZone);
     console.log("Start time raw:", payload.startTime);
 
     const startTime = payload.startTime ? new Date(payload.startTime) : null;
@@ -107,7 +160,7 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // --- Step 2: Create fitting record WITHOUT customer link ---
+    // --- Step 2: Create fitting record ---
     const fittingFields = {
       "Name": fullName,
       "Fitting Type": eventType,
@@ -117,6 +170,8 @@ app.post("/webhook", async (req, res) => {
       "Email": customerEmail,
       "Phone": customerPhone,
       "Notes": bookingNotes,
+      "Status": "Scheduled",
+      "Cal UID": payload.uid || "",
       "UTM Source": getUtm("utm_source"),
       "UTM Medium": getUtm("utm_medium"),
       "UTM Campaign": getUtm("utm_campaign"),
@@ -134,7 +189,7 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`Fitting created: ${fitting.id}`);
 
-    // --- Step 3: Link customer to fitting in a separate PATCH call ---
+    // --- Step 3: Link customer to fitting ---
     if (customerId && fitting.id) {
       console.log(`Linking customer ${customerId} to fitting ${fitting.id}`);
       const linkResult = await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
