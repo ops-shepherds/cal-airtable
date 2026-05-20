@@ -98,6 +98,7 @@ app.post("/webhook", async (req, res) => {
           + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
         : "";
       const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+    const organizer = payload.organizer?.name || "";
       const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
       const metadata = payload.metadata || {};
       const responses = payload.responses || {};
@@ -131,7 +132,8 @@ app.post("/webhook", async (req, res) => {
           "Phone": customerPhone,
           "Notes": bookingNotes,
           "Status": "Scheduled",
-          "Cal UID": payload.uid || "",
+          "Organizer": organizer,
+      "Cal UID": payload.uid || "",
       "iCal UID": iCalUID,
       "iCal Sequence": iCalSequence,
           "UTM Source": getUtm("utm_source"),
@@ -196,6 +198,7 @@ app.post("/webhook", async (req, res) => {
       : "";
 
     const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+    const organizer = payload.organizer?.name || "";
     const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
 
     const metadata = payload.metadata || {};
@@ -256,6 +259,7 @@ app.post("/webhook", async (req, res) => {
       "Phone": customerPhone,
       "Notes": bookingNotes,
       "Status": "Scheduled",
+      "Organizer": organizer,
       "Cal UID": payload.uid || "",
       "iCal UID": iCalUID,
       "iCal Sequence": iCalSequence,
