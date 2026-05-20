@@ -3,7 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json()); 
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
