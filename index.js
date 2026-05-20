@@ -3,7 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 
 const app = express();
-app.use(bodyParser.json()); 
+app.use(bodyParser.json());
 
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
@@ -63,10 +63,21 @@ app.post("/webhook", async (req, res) => {
 
     // --- BOOKING RESCHEDULED ---
     if (triggerEvent === "BOOKING_RESCHEDULED") {
-      console.log("Handling reschedule for UID:", payload.uid);
-      const fitting = await findFittingByUid(payload.uid);
+      const originalUid = payload.rescheduleUid || payload.uid;
+      console.log("Handling reschedule, looking up original UID:", originalUid);
+      const oldFitting = await findFittingByUid(originalUid);
 
       const attendee = payload.attendees?.[0] || {};
+      const fullName = attendee.name || "";
+      const nameParts = fullName.trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
+      const customerEmail = attendee.email || "";
+      const customerPhone =
+        payload.responses?.attendeePhoneNumber?.value ||
+        payload.responses?.phone?.value ||
+        attendee.phoneNumber || "";
+      const eventType = payload.type || payload.eventType?.title || "";
       const timezone = payload.organizer?.timeZone || attendee.timeZone || "America/Chicago";
       const startTime = payload.startTime ? new Date(payload.startTime) : null;
       const bookingDateUTC = payload.startTime || "";
@@ -75,19 +86,60 @@ app.post("/webhook", async (req, res) => {
           + " · "
           + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
         : "";
+      const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+      const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
+      const metadata = payload.metadata || {};
+      const responses = payload.responses || {};
+      const userFields = payload.userFieldsResponses || {};
+      const getUtm = (key) => metadata[key] || userFields[key]?.value || responses[key]?.value || "";
 
-      if (fitting) {
+      // Mark old fitting as Rescheduled
+      if (oldFitting) {
         await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
-          fields: {
-            "Date": bookingDateDisplay,
-            "Date (UTC)": bookingDateUTC,
-            "Status": "Scheduled",
-          }
-        }, fitting.id);
-        console.log(`Updated fitting ${fitting.id} with new date`);
-      } else {
-        console.log("No fitting found for UID:", payload.uid);
+          fields: { "Status": "Rescheduled" }
+        }, oldFitting.id);
+        console.log("Marked fitting " + oldFitting.id + " as Rescheduled");
       }
+
+      // Find customer to link
+      let customerId = null;
+      if (customerEmail) {
+        const customer = await findCustomerByEmail(customerEmail);
+        if (customer) customerId = customer.id;
+      }
+
+      // Create new fitting record
+      const newFitting = await airtableRequest("POST", AIRTABLE_TABLE_NAME, {
+        fields: {
+          "Name": fullName,
+          "Fitting Type": eventType,
+          "Date": bookingDateDisplay,
+          "Date (UTC)": bookingDateUTC,
+          "Location": location,
+          "Email": customerEmail,
+          "Phone": customerPhone,
+          "Notes": bookingNotes,
+          "Status": "Scheduled",
+          "Cal UID": payload.uid || "",
+          "UTM Source": getUtm("utm_source"),
+          "UTM Medium": getUtm("utm_medium"),
+          "UTM Campaign": getUtm("utm_campaign"),
+          "UTM Term": getUtm("utm_term"),
+          "UTM Content": getUtm("utm_content"),
+        }
+      });
+
+      if (newFitting.error) {
+        console.error("New fitting create error:", JSON.stringify(newFitting));
+      } else {
+        console.log("Created new fitting: " + newFitting.id);
+        if (customerId) {
+          await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
+            fields: { "Customer": [customerId] }
+          }, newFitting.id);
+        }
+      }
+
       return res.status(200).json({ success: true });
     }
 
