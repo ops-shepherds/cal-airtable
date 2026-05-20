@@ -44,6 +44,7 @@ app.post("/webhook", async (req, res) => {
   try {
     const event = req.body;
     const triggerEvent = event.triggerEvent;
+    console.log("Received event:", triggerEvent);
     const payload = event.payload;
 
     // --- BOOKING CANCELLED ---
