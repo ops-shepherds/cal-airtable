@@ -152,8 +152,9 @@ app.post("/webhook", async (req, res) => {
     }
 
     // If rescheduleUid is present, this is actually a reschedule
-    const isReschedule = !!payload.rescheduleUid;
-    console.log("Is reschedule:", isReschedule, "rescheduleUid:", payload.rescheduleUid);
+    const rescheduleFromUid = payload.rescheduledFromUid || payload.rescheduleUid;
+    const isReschedule = !!rescheduleFromUid;
+    console.log("Is reschedule:", isReschedule, "rescheduledFromUid:", rescheduleFromUid);
 
     const attendee = payload.attendees?.[0] || {};
     const fullName = attendee.name || "";
@@ -220,7 +221,7 @@ app.post("/webhook", async (req, res) => {
 
     // --- Step 2: If reschedule, mark old fitting as Rescheduled ---
     if (isReschedule) {
-      const oldFitting = await findFittingByUid(payload.rescheduleUid);
+      const oldFitting = await findFittingByUid(rescheduleFromUid);
       if (oldFitting) {
         await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
           fields: { "Status": "Rescheduled" }
