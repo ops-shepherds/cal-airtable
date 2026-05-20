@@ -151,6 +151,10 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ignored: true });
     }
 
+    // If rescheduleUid is present, this is actually a reschedule
+    const isReschedule = !!payload.rescheduleUid;
+    console.log("Is reschedule:", isReschedule, "rescheduleUid:", payload.rescheduleUid);
+
     const attendee = payload.attendees?.[0] || {};
     const fullName = attendee.name || "";
     const nameParts = fullName.trim().split(" ");
@@ -214,7 +218,20 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // --- Step 2: Create fitting record ---
+    // --- Step 2: If reschedule, mark old fitting as Rescheduled ---
+    if (isReschedule) {
+      const oldFitting = await findFittingByUid(payload.rescheduleUid);
+      if (oldFitting) {
+        await airtableRequest("PATCH", AIRTABLE_TABLE_NAME, {
+          fields: { "Status": "Rescheduled" }
+        }, oldFitting.id);
+        console.log("Marked old fitting as Rescheduled:", oldFitting.id);
+      } else {
+        console.log("Could not find old fitting with rescheduleUid:", payload.rescheduleUid);
+      }
+    }
+
+    // --- Step 3: Create fitting record ---
     const fittingFields = {
       "Name": fullName,
       "Fitting Type": eventType,
