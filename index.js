@@ -241,7 +241,7 @@ app.post("/webhook", async (req, res) => {
         }, oldFitting.id);
         console.log("Marked old fitting as Rescheduled:", oldFitting.id);
       } else {
-        console.log("Could not find old fitting with rescheduleUid:", payload.rescheduleUid);
+        console.log("Could not find old fitting with iCalUID:", iCalUID);
       }
     }
 
@@ -257,6 +257,8 @@ app.post("/webhook", async (req, res) => {
       "Notes": bookingNotes,
       "Status": "Scheduled",
       "Cal UID": payload.uid || "",
+      "iCal UID": iCalUID,
+      "iCal Sequence": iCalSequence,
       "UTM Source": getUtm("utm_source"),
       "UTM Medium": getUtm("utm_medium"),
       "UTM Campaign": getUtm("utm_campaign"),
