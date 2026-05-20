@@ -8,7 +8,7 @@ app.use(bodyParser.json());
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
 const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || "Fittings";
-const AIRTABLE_CUSTOMERS_TABLE = process.env.AIRTABLE_CUSTOMERS_TABLE || "Customers"; 
+const AIRTABLE_CUSTOMERS_TABLE = process.env.AIRTABLE_CUSTOMERS_TABLE || "Customers";
 
 const AIRTABLE_HEADERS = {
   Authorization: `Bearer ${AIRTABLE_API_KEY}`,
@@ -63,6 +63,7 @@ app.post("/webhook", async (req, res) => {
 
     // --- BOOKING RESCHEDULED ---
     if (triggerEvent === "BOOKING_RESCHEDULED") {
+      console.log("Reschedule payload uid:", payload.uid, "rescheduleUid:", payload.rescheduleUid);
       const originalUid = payload.rescheduleUid || payload.uid;
       console.log("Handling reschedule, looking up original UID:", originalUid);
       const oldFitting = await findFittingByUid(originalUid);
