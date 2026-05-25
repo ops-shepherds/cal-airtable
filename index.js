@@ -124,7 +124,7 @@ app.post("/webhook", async (req, res) => {
       const newFitting = await airtableRequest("POST", AIRTABLE_TABLE_NAME, {
         fields: {
           "Name": fullName,
-          "Fitting Type": eventType,
+          "fitting_type_cal": eventType,
           "Date": bookingDateDisplay,
           "Date (UTC)": bookingDateUTC,
           "Location": location,
@@ -251,7 +251,7 @@ app.post("/webhook", async (req, res) => {
     // --- Step 3: Create fitting record ---
     const fittingFields = {
       "Name": fullName,
-      "Fitting Type": eventType,
+      "fitting_type_cal": eventType,
       "Date": bookingDateDisplay,
       "Date (UTC)": bookingDateUTC,
       "Location": location,
