@@ -143,7 +143,7 @@ app.post("/webhook", async (req, res) => {
         "UTM Content": getUtm("utm_content"),
       };
 
-      if (fitterUserId) newFittingFields["Fitter"] = [{ "id": fitterUserId }];
+      if (fitterUserId) newFittingFields["Fitter"] = { "id": fitterUserId };
 
       const newFitting = await airtableRequest("POST", AIRTABLE_TABLE_NAME, { fields: newFittingFields });
 
@@ -265,7 +265,7 @@ app.post("/webhook", async (req, res) => {
       "UTM Content": getUtm("utm_content"),
     };
 
-    if (fitterUserId) fittingFields["Fitter"] = [{ "id": fitterUserId }];
+    if (fitterUserId) fittingFields["Fitter"] = { "id": fitterUserId };
 
     console.log("Creating fitting record...");
     const fitting = await airtableRequest("POST", AIRTABLE_TABLE_NAME, { fields: fittingFields });
