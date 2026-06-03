@@ -95,7 +95,8 @@ app.post("/webhook", async (req, res) => {
       const bookingDateDisplay = startTime
         ? startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: timezone }) + " · " + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
         : "";
-      const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+      const rawLocation = payload.location || "";
+      const location = (rawLocation && !rawLocation.startsWith("integrations:")) ? rawLocation : (payload.videoCallData?.url || payload.responses?.location?.value || "");
       const organizer = payload.organizer?.name || "";
       const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
       const metadata = payload.metadata || {};
@@ -188,7 +189,8 @@ app.post("/webhook", async (req, res) => {
       ? startTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: timezone }) + " · " + startTime.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone: timezone })
       : "";
 
-    const location = payload.location || payload.videoCallData?.url || payload.responses?.location?.value || "";
+    const rawLocation = payload.location || "";
+      const location = (rawLocation && !rawLocation.startsWith("integrations:")) ? rawLocation : (payload.videoCallData?.url || payload.responses?.location?.value || "");
     const organizer = payload.organizer?.name || "";
     const bookingNotes = payload.responses?.notes?.value || payload.responses?.message?.value || payload.additionalNotes || payload.description || "";
     const metadata = payload.metadata || {};
