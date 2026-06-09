@@ -142,6 +142,7 @@ app.post("/webhook", async (req, res) => {
         "UTM Campaign": getUtm("utm_campaign"),
         "UTM Term": getUtm("utm_term"),
         "UTM Content": getUtm("utm_content"),
+      "GCLID": getUtm("gclid"),
       };
 
       if (fitterUserId) newFittingFields["Fitter"] = { "id": fitterUserId };
@@ -265,6 +266,7 @@ app.post("/webhook", async (req, res) => {
       "UTM Campaign": getUtm("utm_campaign"),
       "UTM Term": getUtm("utm_term"),
       "UTM Content": getUtm("utm_content"),
+      "GCLID": getUtm("gclid"),
     };
 
     if (fitterUserId) fittingFields["Fitter"] = { "id": fitterUserId };
